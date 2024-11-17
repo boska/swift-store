@@ -74,7 +74,7 @@ final class StoreTests: XCTestCase {
         }
         return newState
       },
-      middleware: [
+      middlewares: [
         loggingMiddleware,
         doubleToIncrementMiddleware,
       ]
