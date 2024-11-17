@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import ArchSwift
+@testable import SwiftStore
 
 final class StoreTests: XCTestCase {
   struct TestState: StateType {

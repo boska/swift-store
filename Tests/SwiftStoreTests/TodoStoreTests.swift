@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import ArchSwift
+@testable import SwiftStore
 
 final class TodoStoreTests: XCTestCase {
   struct Todo: Equatable, Identifiable {

@@ -7,6 +7,7 @@ A lightweight, type-safe state management library for Swift. Loose ties to Swift
 [![License](https://img.shields.io/badge/license-MIT-black.svg)](https://github.com/yourusername/ArchSwift/blob/main/LICENSE)
 
 ## Features
+- 🎯 **100% tested**: 100% of the code is tested with XCTest.
 - 📦 **Lightweight**: No additional dependencies, just Swift
 - 📦 **Opt-in SwiftUI wrapper**: `ObservableStore` to easily integrate with SwiftUI
 - 🎯 **Type-safe**: Fully type-safe state management with Swift's type system

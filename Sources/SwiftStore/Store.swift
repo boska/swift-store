@@ -1,44 +1,47 @@
 import SwiftUI
 
-protocol StateType: Equatable {
+public protocol StateType: Equatable {
   associatedtype Action
 }
 
-protocol Store {
+public protocol Store {
   associatedtype State: StateType
 
   var state: State { get }
   func dispatch(_ action: State.Action) async
 }
 
-typealias Middleware<State: StateType> = (
+public typealias Middleware<State: StateType> = (
   _ store: any Store,
   _ next: @escaping (State.Action) async -> Void,
   _ action: State.Action
 ) async -> Void
 
-final class CoreStore<State: StateType>: Store {
+public final class CoreStore<State: StateType>: Store {
   private let reducer: (State, State.Action) -> State
   private let middleware: [Middleware<State>]
-  private(set) var state: State
+	public var state: State {
+		_state
+	}
+  private(set) var _state: State
   private var stateHistory: [State] = []
   private let maxHistoryItems: Int
 
-  init(
+  public init(
     initialState: State,
     reducer: @escaping (State, State.Action) -> State,
     middleware: [Middleware<State>] = [],
     maxHistoryItems: Int = 10
   ) {
     self.maxHistoryItems = maxHistoryItems
-    self.state = initialState
+    self._state = initialState
     self.reducer = reducer
     self.middleware = middleware
   }
 
-  func dispatch(_ action: State.Action) async {
+	public func dispatch(_ action: State.Action) async {
     // Save current state before modification
-    stateHistory.append(state)
+    stateHistory.append(_state)
     if stateHistory.count > maxHistoryItems {
       stateHistory.removeFirst()
     }
@@ -47,7 +50,7 @@ final class CoreStore<State: StateType>: Store {
     let chain = middleware.reduce(
       { [weak self] action in
         guard let self = self else { return }
-        self.state = self.reducer(self.state, action)
+        self._state = self.reducer(self._state, action)
       } as @Sendable (State.Action) async -> Void
     ) { chain, middleware in
       return { [weak self] action in
@@ -62,7 +65,7 @@ final class CoreStore<State: StateType>: Store {
 
   func undo() async {
     guard let previousState = stateHistory.popLast() else { return }
-    state = previousState
+    _state = previousState
   }
 
   var canUndo: Bool {
@@ -71,19 +74,22 @@ final class CoreStore<State: StateType>: Store {
 }
 
 @MainActor
-final class ObservableStore<S: Store>: ObservableObject {
-  @Published private(set) var state: S.State
+public final class ObservableStore<S: Store>: ObservableObject {
+	public var state: S.State {
+		_state
+	}
+  @Published private(set) var _state: S.State
   private let store: S
 
-  init(store: S) {
+  public init(store: S) {
     self.store = store
-    self.state = store.state
+    self._state = store.state
   }
 
-  func dispatch(_ action: S.State.Action) {
+	public func dispatch(_ action: S.State.Action) {
     Task {
       await store.dispatch(action)
-      await MainActor.run { self.state = store.state }
+      await MainActor.run { self._state = store.state }
     }
   }
 }
