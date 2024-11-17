@@ -1,13 +1,14 @@
-# ArchSwift
+# Swift Store
 
-A lightweight, type-safe state management library for SwiftUI applications, inspired by Redux and The Elm Architecture.
+A lightweight, type-safe state management library for Swift. Loose ties to SwiftUI, inspired by Redux and The Elm Architecture.
 
 [![Swift](https://img.shields.io/badge/Swift-5.5+-orange.svg)](https://swift.org)
 [![SwiftUI](https://img.shields.io/badge/SwiftUI-3.0+-blue.svg)](https://developer.apple.com/xcode/swiftui)
 [![License](https://img.shields.io/badge/license-MIT-black.svg)](https://github.com/yourusername/ArchSwift/blob/main/LICENSE)
 
 ## Features
-
+- 📦 **Lightweight**: No additional dependencies, just Swift
+- 📦 **Opt-in SwiftUI wrapper**: `ObservableStore` to easily integrate with SwiftUI
 - 🎯 **Type-safe**: Fully type-safe state management with Swift's type system
 - 🔄 **Predictable**: One-way data flow with immutable state updates
 - 🧩 **Composable**: Easy to compose and reuse reducers and middleware

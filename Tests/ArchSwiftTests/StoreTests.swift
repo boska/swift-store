@@ -237,4 +237,111 @@ final class StoreTests: XCTestCase {
 
     XCTAssertEqual(loggedActions, [.increment, .decrement, .increment])
   }
+
+  func testUndo() async {
+    // Given
+    let store = CoreStore(
+      initialState: TestState(),
+      reducer: { state, action in
+        var newState = state
+        switch action {
+        case .increment:
+          newState.counter += 1
+        case .decrement:
+          newState.counter -= 1
+        }
+        return newState
+      }
+    )
+
+    // When
+    await store.dispatch(.increment)
+    XCTAssertEqual(store.state.counter, 1)
+    XCTAssertTrue(store.canUndo)
+
+    await store.dispatch(.increment)
+    XCTAssertEqual(store.state.counter, 2)
+
+    // Then
+    await store.undo()
+    XCTAssertEqual(store.state.counter, 1)
+
+    await store.undo()
+    XCTAssertEqual(store.state.counter, 0)
+
+    // When trying to undo with empty history
+    await store.undo()
+    XCTAssertEqual(store.state.counter, 0)
+    XCTAssertFalse(store.canUndo)
+  }
+
+  func testHistoryLimit() async {
+    // Given
+    let store = CoreStore(
+      initialState: TestState(),
+      reducer: { state, action in
+        var newState = state
+        switch action {
+        case .increment:
+          newState.counter += 1
+        case .decrement:
+          newState.counter -= 1
+        }
+        return newState
+      },
+      maxHistoryItems: 2
+    )
+
+    // When performing more actions than history limit
+    await store.dispatch(.increment)  // 1
+    await store.dispatch(.increment)  // 2
+    await store.dispatch(.increment)  // 3
+
+    XCTAssertEqual(store.state.counter, 3)
+
+    // Then can only undo up to history limit
+    await store.undo()
+    XCTAssertEqual(store.state.counter, 2)
+
+    await store.undo()
+    XCTAssertEqual(store.state.counter, 1)
+
+    // No more history available
+    await store.undo()
+    XCTAssertEqual(store.state.counter, 1)
+  }
+
+  func testUndoWithMiddleware() async {
+    var middlewareCalled = false
+
+    // Given
+    let testMiddleware: Middleware<TestState> = { store, next, action in
+      middlewareCalled = true
+      await next(action)
+    }
+
+    let store = CoreStore(
+      initialState: TestState(),
+      reducer: { state, action in
+        var newState = state
+        switch action {
+        case .increment:
+          newState.counter += 1
+        case .decrement:
+          newState.counter -= 1
+        }
+        return newState
+      },
+      middleware: [testMiddleware]
+    )
+
+    // When
+    await store.dispatch(.increment)
+    XCTAssertTrue(middlewareCalled)
+
+    middlewareCalled = false
+    await store.undo()
+    // Then middleware should not be called for undo
+    XCTAssertFalse(middlewareCalled)
+  }
 }
