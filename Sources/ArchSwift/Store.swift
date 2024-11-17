@@ -11,33 +11,43 @@ protocol Store {
   func dispatch(_ action: State.Action) async
 }
 
+typealias Middleware<State: StateType> = (
+  _ store: any Store,
+  _ next: @escaping (State.Action) async -> Void,
+  _ action: State.Action
+) async -> Void
+
 final class CoreStore<State: StateType>: Store {
   private let reducer: (State, State.Action) -> State
-  private let middlewares: [(State, State.Action) async -> State.Action?]
+  private let middleware: [Middleware<State>]
   private(set) var state: State
 
   init(
     initialState: State,
     reducer: @escaping (State, State.Action) -> State,
-    middlewares: [(State, State.Action) async -> State.Action?] = []
+    middleware: [Middleware<State>] = []
   ) {
     self.state = initialState
     self.reducer = reducer
-    self.middlewares = middlewares
+    self.middleware = middleware
   }
 
   func dispatch(_ action: State.Action) async {
-    // Run through middleware chain
-    var currentAction = action
-    for middleware in middlewares {
-      guard let newAction = await middleware(state, currentAction) else {
-        return  // Middleware cancelled the action
+    // Create the middleware chain
+    let chain = middleware.reduce(
+      { [weak self] action in
+        guard let self = self else { return }
+        await self.dispatch(action)
+      } as @Sendable (State.Action) async -> Void
+    ) { chain, middleware in
+      return { [weak self] action in
+        guard let self = self else { return }
+        await middleware(self, chain, action)
       }
-      currentAction = newAction
     }
 
-    // Apply final action
-    state = reducer(state, currentAction)
+    // Start the chain
+    await chain(action)
   }
 }
 
