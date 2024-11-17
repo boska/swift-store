@@ -13,15 +13,31 @@ protocol Store {
 
 final class CoreStore<State: StateType>: Store {
   private let reducer: (State, State.Action) -> State
+  private let middleware: [(State, State.Action) async -> State.Action?]
   private(set) var state: State
 
-  init(initialState: State, reducer: @escaping (State, State.Action) -> State) {
+  init(
+    initialState: State,
+    reducer: @escaping (State, State.Action) -> State,
+    middleware: [(State, State.Action) async -> State.Action?] = []
+  ) {
     self.state = initialState
     self.reducer = reducer
+    self.middleware = middleware
   }
 
   func dispatch(_ action: State.Action) async {
-    state = reducer(state, action)
+    // Run through middleware chain
+    var currentAction = action
+    for middlewareItem in middleware {
+      guard let newAction = await middlewareItem(state, currentAction) else {
+        return  // Middleware cancelled the action
+      }
+      currentAction = newAction
+    }
+
+    // Apply final action
+    state = reducer(state, currentAction)
   }
 }
 
