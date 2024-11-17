@@ -1,41 +1,30 @@
 import SwiftUI
 
-// 1. Core protocol that doesn't depend on SwiftUI
-protocol Store {
-  associatedtype State
+protocol StateType: Equatable {
   associatedtype Action
+}
+
+protocol Store {
+  associatedtype State: StateType
 
   var state: State { get }
-  func dispatch(_ action: Action) async
+  func dispatch(_ action: State.Action) async
 }
 
-// 2. Pure reducer type
-protocol Reducer<State, Action> {
-  associatedtype State
-  associatedtype Action
-
-  func reduce(state: State, action: Action) -> State
-}
-
-// 3. Core store implementation
-final class CoreStore<R: Reducer>: Store {
-  typealias State = R.State
-  typealias Action = R.Action
-
-  private let reducer: R
+final class CoreStore<State: StateType>: Store {
+  private let reducer: (State, State.Action) -> State
   private(set) var state: State
 
-  init(initialState: State, reducer: R) {
+  init(initialState: State, reducer: @escaping (State, State.Action) -> State) {
     self.state = initialState
     self.reducer = reducer
   }
 
-  func dispatch(_ action: Action) async {
-    state = reducer.reduce(state: state, action: action)
+  func dispatch(_ action: State.Action) async {
+    state = reducer(state, action)
   }
 }
 
-// 4. SwiftUI wrapper (only place where @MainActor is needed)
 @MainActor
 final class ObservableStore<S: Store>: ObservableObject {
   @Published private(set) var state: S.State
@@ -46,7 +35,7 @@ final class ObservableStore<S: Store>: ObservableObject {
     self.state = store.state
   }
 
-  func dispatch(_ action: S.Action) {
+  func dispatch(_ action: S.State.Action) {
     Task {
       await store.dispatch(action)
       await MainActor.run { self.state = store.state }
