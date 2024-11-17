@@ -37,7 +37,7 @@ final class CoreStore<State: StateType>: Store {
     let chain = middleware.reduce(
       { [weak self] action in
         guard let self = self else { return }
-        await self.dispatch(action)
+        self.state = self.reducer(self.state, action)
       } as @Sendable (State.Action) async -> Void
     ) { chain, middleware in
       return { [weak self] action in

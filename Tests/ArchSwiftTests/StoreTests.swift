@@ -41,35 +41,35 @@ final class StoreTests: XCTestCase {
     XCTAssertEqual(store.state.counter, 0)
   }
 
-  // func testMiddleware() async {
-  //   var middlewareCalled = false
+  func testMiddleware() async {
+    var middlewareCalled = false
 
-  //   // Given
-  //   let testMiddleware: Middleware<TestState> = { store, next, action in
-  //     middlewareCalled = true
-  //     await next(action)
-  //   }
+    // Given
+    let testMiddleware: Middleware<TestState> = { store, next, action in
+      middlewareCalled = true
+      await next(action)
+    }
 
-  //   let store = CoreStore(
-  //     initialState: TestState(),
-  //     reducer: { state, action in
-  //       var newState = state
-  //       switch action {
-  //       case .increment:
-  //         newState.counter += 1
-  //       case .decrement:
-  //         newState.counter -= 1
-  //       }
-  //       return newState
-  //     },
-  //     middleware: []
-  //   )
+    let store = CoreStore(
+      initialState: TestState(),
+      reducer: { state, action in
+        var newState = state
+        switch action {
+        case .increment:
+          newState.counter += 1
+        case .decrement:
+          newState.counter -= 1
+        }
+        return newState
+      },
+      middleware: [testMiddleware]
+    )
 
-  //   // When
-  //   await store.dispatch(.increment)
+    // When
+    await store.dispatch(.increment)
 
-  //   // Then
-  //   XCTAssertTrue(middlewareCalled)
-  //   XCTAssertEqual(store.state.counter, 1)
-  // }
+    // Then
+    XCTAssertTrue(middlewareCalled)
+    XCTAssertEqual(store.state.counter, 1)
+  }
 }
