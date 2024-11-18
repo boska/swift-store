@@ -74,7 +74,22 @@ struct ContentView: View {
 Create and compose middleware for logging, analytics, or other side effects:
 
 ```swift
-// Logging Middleware
+/// Creates a logging middleware that traces the complete action dispatch lifecycle.
+/// 
+/// The middleware executes in the following sequence:
+/// 1. Pre-action: Logs the incoming action and current state
+/// 2. Action: Passes the action to the next middleware in chain
+/// 3. Post-action: Logs the completed action and resulting state
+///
+/// Example output:
+/// ```
+/// ⚡️ Before action: setTheme(dark)
+/// 📝 Current state: AppSettings(theme: system, ...)
+/// ✅ After action: setTheme(dark)
+/// 📝 New state: AppSettings(theme: dark, ...)
+/// ```
+///
+/// - Returns: A middleware function that logs state changes and actions
 func makeLoggingMiddleware<State: StateType>() -> Middleware<State> {
     return { store, next, action in
         print("⚡️ Before action: \(action)")
@@ -115,68 +130,158 @@ struct ContentView: View {
 }
 ```
 
-## Complex Example: Todo List
+## Complex Example: App Settings
 
 ```swift
-struct TodoState: StateType {
-    struct Todo: Identifiable, Equatable {
-        let id: UUID = UUID()
-        var text: String
-        var isCompleted: Bool = false
+struct AppSettings: StateType {
+    enum Theme: String, CaseIterable {
+        case system
+        case light
+        case dark
     }
     
-    var todos: [Todo] = []
+    struct Locale: Equatable {
+        var language: String
+        var region: String
+        
+        static let current = Locale(
+            language: Bundle.main.preferredLocalizations.first ?? "en",
+            region: Locale.current.regionCode ?? "US"
+        )
+    }
+    
+    var theme: Theme = .system
+    var locale: Locale = .current
     
     enum Action {
-        case add(String)
-        case toggle(UUID)
-        case delete(UUID)
+        case setTheme(Theme)
+        case setLocale(Locale)
+        case resetToDefaults
     }
 }
 
-struct TodoListView: View {
+private func settingsReducer(state: AppSettings, action: AppSettings.Action) -> AppSettings {
+    var newState = state
+    
+    switch action {
+    case .setTheme(let theme):
+        newState.theme = theme
+    case .setLocale(let locale):
+        newState.locale = locale
+    case .resetToDefaults:
+        newState.theme = .system
+        newState.locale = .current
+    }
+    
+    return newState
+}
+
+// Persistence Middleware
+func makePersistenceMiddleware<State: StateType>() -> Middleware<State> {
+    return { store, next, action in
+        await next(action)
+        
+        // Persist state changes to UserDefaults
+        let encoder = JSONEncoder()
+        if let data = try? encoder.encode(store.state) {
+            UserDefaults.standard.set(data, forKey: "AppSettings")
+        }
+    }
+}
+
+struct SettingsView: View {
     @Store(
-        initialState: TodoState(),
-        reducer: todoReducer,
-        middleware: [makeLoggingMiddleware()]
+        initialState: AppSettings(),
+        reducer: settingsReducer,
+        middleware: [
+            makeLoggingMiddleware(),
+            makePersistenceMiddleware()
+        ]
     ) private var store
-    @State private var newTodoText = ""
     
     var body: some View {
-        VStack {
-            List {
-                ForEach(store.state.todos) { todo in
-                    HStack {
-                        Text(todo.text)
-                        Spacer()
-                        if todo.isCompleted {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                    .onTapGesture {
-                        store.dispatch(.toggle(todo.id))
-                    }
-                }
-                .onDelete { indexSet in
-                    if let index = indexSet.first,
-                       let id = store.state.todos[safe: index]?.id {
-                        store.dispatch(.delete(id))
+        Form {
+            Section("Theme") {
+                Picker("Theme", selection: Binding(
+                    get: { store.state.theme },
+                    set: { store.dispatch(.setTheme($0)) }
+                )) {
+                    ForEach(AppSettings.Theme.allCases, id: \.self) { theme in
+                        Text(theme.rawValue.capitalized)
+                            .tag(theme)
                     }
                 }
             }
             
-            HStack {
-                TextField("New Todo", text: $newTodoText)
-                Button("Add") {
-                    store.dispatch(.add(newTodoText))
-                    newTodoText = ""
+            Section("Language & Region") {
+                Picker("Language", selection: Binding(
+                    get: { store.state.locale.language },
+                    set: { newValue in
+                        var newLocale = store.state.locale
+                        newLocale.language = newValue
+                        store.dispatch(.setLocale(newLocale))
+                    }
+                )) {
+                    Text("English").tag("en")
+                    Text("Spanish").tag("es")
+                    Text("French").tag("fr")
+                }
+                
+                Picker("Region", selection: Binding(
+                    get: { store.state.locale.region },
+                    set: { newValue in
+                        var newLocale = store.state.locale
+                        newLocale.region = newValue
+                        store.dispatch(.setLocale(newLocale))
+                    }
+                )) {
+                    Text("United States").tag("US")
+                    Text("United Kingdom").tag("GB")
+                    Text("Canada").tag("CA")
                 }
             }
-            .padding()
+            
+            Section {
+                Button("Reset to Defaults") {
+                    store.dispatch(.resetToDefaults)
+                }
+            }
         }
+        .onChange(of: store.state.theme) { newTheme in
+            updateSystemTheme(to: newTheme)
+        }
+        .onChange(of: store.state.locale) { newLocale in
+            updateSystemLocale(to: newLocale)
+        }
+    }
+    
+    private func updateSystemTheme(to theme: AppSettings.Theme) {
+        // Update app theme
+        switch theme {
+        case .system:
+            window?.overrideUserInterfaceStyle = .unspecified
+        case .light:
+            window?.overrideUserInterfaceStyle = .light
+        case .dark:
+            window?.overrideUserInterfaceStyle = .dark
+        }
+    }
+    
+    private func updateSystemLocale(to locale: AppSettings.Locale) {
+        // Update app locale
+        Bundle.setLanguage(locale.language)
+        // Additional locale setup...
     }
 }
 ```
+
+This example demonstrates:
+- Complex state management with multiple related settings
+- Middleware for persistence
+- SwiftUI bindings with store dispatch
+- Side effects handling with `onChange` modifiers
+- Reset functionality
+- Type-safe enums for settings
 
 ## Testing
 
