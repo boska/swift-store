@@ -1,43 +1,26 @@
-# Swift Store
+# SwiftStore
 
-A lightweight, type-safe state management library for Swift. Loose ties to SwiftUI, inspired by Redux and The Elm Architecture.
+A lightweight, type-safe state management library for Swift with elegant SwiftUI integration through property wrappers.
 
 [![Swift](https://img.shields.io/badge/Swift-5.5+-orange.svg)](https://swift.org)
 [![SwiftUI](https://img.shields.io/badge/SwiftUI-3.0+-blue.svg)](https://developer.apple.com/xcode/swiftui)
-[![License](https://img.shields.io/badge/license-MIT-black.svg)](https://github.com/yourusername/ArchSwift/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-black.svg)](https://github.com/yourusername/SwiftStore/blob/main/LICENSE)
 
 ## Features
-- 🎯 **100% tested**: 100% of the code is tested with XCTest.
-- 📦 **Lightweight**: No additional dependencies, just Swift
-- 📦 **Opt-in SwiftUI wrapper**: `ObservableStore` to easily integrate with SwiftUI
-- 🎯 **Type-safe**: Fully type-safe state management with Swift's type system
-- 🔄 **Predictable**: One-way data flow with immutable state updates
-- 🧩 **Composable**: Easy to compose and reuse reducers and middleware
-- ⚡️ **Swift Concurrency**: Built with async/await for better performance
-- 🎨 **SwiftUI Integration**: Seamless integration with SwiftUI
-- 🧪 **Testable**: Designed for easy testing and debugging
-
-## Installation
-
-### Swift Package Manager
-
-Add the following to your `Package.swift` file:
-
-```swift
-dependencies: [
-    .package(url: "https://github.com/yourusername/ArchSwift", from: "1.0.0")
-]
-```
+- 🎯 **Property Wrapper Integration**: Clean SwiftUI integration with `@Store`
+- 🔄 **Middleware Support**: Composable middleware for side effects and logging
+- 📦 **Lightweight**: No external dependencies
+- ⚡️ **Swift Concurrency**: Built with async/await
+- 🧪 **Testable**: Designed for easy testing
+- 🎨 **SwiftUI First**: Seamless SwiftUI integration
 
 ## Basic Usage
 
 ### Define Your State
 
-Your state should conform to `StateType` protocol and include its associated actions:
-
 ```swift
-struct AppState: StateType {
-    var counter: Int = 0
+struct CounterState: StateType {
+    var count: Int = 0
     
     enum Action {
         case increment
@@ -46,51 +29,33 @@ struct AppState: StateType {
 }
 ```
 
-### Create Store
-
-Initialize your store with initial state and a reducer:
+### Create Your Reducer
 
 ```swift
-let store = CoreStore(
-    initialState: AppState(),
-    reducer: { state, action in
-        var newState = state
-        switch action {
-        case .increment:
-            newState.counter += 1
-        case .decrement:
-            newState.counter -= 1
-        }
-        return newState
+func counterReducer(state: CounterState, action: CounterState.Action) -> CounterState {
+    var newState = state
+    switch action {
+    case .increment:
+        newState.count += 1
+    case .decrement:
+        newState.count -= 1
     }
-)
+    return newState
+}
 ```
 
 ### Use in SwiftUI
 
-Integrate with SwiftUI using `ObservableStore`:
-
 ```swift
 struct ContentView: View {
-    @StateObject private var store = ObservableStore(
-        store: CoreStore(
-            initialState: AppState(),
-            reducer: { state, action in
-                var newState = state
-                switch action {
-                case .increment:
-                    newState.counter += 1
-                case .decrement:
-                    newState.counter -= 1
-                }
-                return newState
-            }
-        )
-    )
+    @Store(
+        initialState: CounterState(),
+        reducer: counterReducer
+    ) private var store
     
     var body: some View {
         VStack {
-            Text("Count: \(store.state.counter)")
+            Text("Count: \(store.state.count)")
             
             Button("Increment") {
                 store.dispatch(.increment)
@@ -104,126 +69,153 @@ struct ContentView: View {
 }
 ```
 
-## Advanced Usage
+## Middleware
 
-### Middleware
-
-Middleware allows you to intercept actions for logging, side effects, or transformations:
+Create and compose middleware for logging, analytics, or other side effects:
 
 ```swift
-// Logging middleware
-let loggingMiddleware: (AppState, AppState.Action) async -> AppState.Action? = { state, action in
-    print("Action: \(action)")
-    print("State: \(state)")
-    return action
+// Logging Middleware
+func makeLoggingMiddleware<State: StateType>() -> Middleware<State> {
+    return { store, next, action in
+        print("⚡️ Before action: \(action)")
+        print("📝 Current state: \(store.state)")
+        
+        await next(action)
+        
+        print("✅ After action: \(action)")
+        print("📝 New state: \(store.state)")
+    }
 }
 
-// Analytics middleware
-let analyticsMiddleware: (AppState, AppState.Action) async -> AppState.Action? = { _, action in
-    await Analytics.track(action)
-    return action
+// Analytics Middleware
+func makeAnalyticsMiddleware<State: StateType>() -> Middleware<State> {
+    return { store, next, action in
+        await Analytics.track("action_dispatched", properties: [
+            "action": String(describing: action)
+        ])
+        
+        await next(action)
+    }
 }
 
-// Store with middleware
-let store = CoreStore(
-    initialState: AppState(),
-    reducer: appReducer,
-    middleware: [
-        loggingMiddleware,
-        analyticsMiddleware
-    ]
-)
+// Use middleware in your view
+struct ContentView: View {
+    @Store(
+        initialState: CounterState(),
+        reducer: counterReducer,
+        middleware: [
+            makeLoggingMiddleware(),
+            makeAnalyticsMiddleware()
+        ]
+    ) private var store
+    
+    var body: some View {
+        // ... view implementation ...
+    }
+}
 ```
 
-### Complex State Example
-
-Here's a more complex example with a todo list:
+## Complex Example: Todo List
 
 ```swift
 struct TodoState: StateType {
-    struct Todo: Equatable, Identifiable {
-        let id: UUID
+    struct Todo: Identifiable, Equatable {
+        let id: UUID = UUID()
         var text: String
-        var isCompleted: Bool
+        var isCompleted: Bool = false
     }
     
     var todos: [Todo] = []
-    var isLoading: Bool = false
     
     enum Action {
-        case addTodo(String)
-        case toggleTodo(UUID)
-        case removeTodo(UUID)
-        case setLoading(Bool)
+        case add(String)
+        case toggle(UUID)
+        case delete(UUID)
     }
 }
 
-let todoStore = CoreStore(
-    initialState: TodoState(),
-    reducer: { state, action in
-        var newState = state
-        switch action {
-        case .addTodo(let text):
-            let todo = TodoState.Todo(id: UUID(), text: text, isCompleted: false)
-            newState.todos.append(todo)
-        case .toggleTodo(let id):
-            if let index = newState.todos.firstIndex(where: { $0.id == id }) {
-                newState.todos[index].isCompleted.toggle()
+struct TodoListView: View {
+    @Store(
+        initialState: TodoState(),
+        reducer: todoReducer,
+        middleware: [makeLoggingMiddleware()]
+    ) private var store
+    @State private var newTodoText = ""
+    
+    var body: some View {
+        VStack {
+            List {
+                ForEach(store.state.todos) { todo in
+                    HStack {
+                        Text(todo.text)
+                        Spacer()
+                        if todo.isCompleted {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                    .onTapGesture {
+                        store.dispatch(.toggle(todo.id))
+                    }
+                }
+                .onDelete { indexSet in
+                    if let index = indexSet.first,
+                       let id = store.state.todos[safe: index]?.id {
+                        store.dispatch(.delete(id))
+                    }
+                }
             }
-        case .removeTodo(let id):
-            newState.todos.removeAll { $0.id == id }
-        case .setLoading(let isLoading):
-            newState.isLoading = isLoading
+            
+            HStack {
+                TextField("New Todo", text: $newTodoText)
+                Button("Add") {
+                    store.dispatch(.add(newTodoText))
+                    newTodoText = ""
+                }
+            }
+            .padding()
         }
-        return newState
     }
-)
+}
 ```
 
 ## Testing
 
-ArchSwift is designed for testability. Here's how to test your store:
+Testing is straightforward with the store:
 
 ```swift
-final class StoreTests: XCTestCase {
-    func testCounter() async {
+final class TodoStoreTests: XCTestCase {
+    func testAddTodo() async {
         // Given
-        let store = CoreStore(
-            initialState: AppState(),
-            reducer: { state, action in
-                var newState = state
-                switch action {
-                case .increment:
-                    newState.counter += 1
-                case .decrement:
-                    newState.counter -= 1
-                }
-                return newState
-            }
-        )
+        @Store(
+            initialState: TodoState(),
+            reducer: todoReducer
+        ) var store
         
         // When
-        await store.dispatch(.increment)
+        await store.dispatch(.add("Test Todo"))
         
         // Then
-        XCTAssertEqual(store.state.counter, 1)
+        XCTAssertEqual(store.state.todos.count, 1)
+        XCTAssertEqual(store.state.todos.first?.text, "Test Todo")
+    }
+    
+    func testToggleTodo() async {
+        // Given
+        @Store(
+            initialState: TodoState(todos: [
+                .init(text: "Test Todo")
+            ]),
+            reducer: todoReducer
+        ) var store
         
         // When
-        await store.dispatch(.decrement)
+        await store.dispatch(.toggle(store.state.todos[0].id))
         
         // Then
-        XCTAssertEqual(store.state.counter, 0)
+        XCTAssertTrue(store.state.todos[0].isCompleted)
     }
 }
 ```
-
-## Best Practices
-
-1. Keep your state immutable
-2. Make state updates predictable
-3. Use middleware for side effects
-4. Keep reducers pure
-5. Test your stores thoroughly
 
 ## Requirements
 
@@ -231,9 +223,19 @@ final class StoreTests: XCTestCase {
 - Swift 5.5+
 - Xcode 13.0+
 
+## Installation
+
+### Swift Package Manager
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/yourusername/SwiftStore", from: "1.0.0")
+]
+```
+
 ## License
 
-ArchSwift is available under the MIT license. See the LICENSE file for more info.
+SwiftStore is available under the MIT license. See the LICENSE file for more info.
 
 ## Contributing
 
