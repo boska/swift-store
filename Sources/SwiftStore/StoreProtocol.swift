@@ -4,7 +4,7 @@ public protocol StateType: Equatable {
   associatedtype Action
 }
 
-public protocol Store {
+public protocol StoreProtocol {
   associatedtype State: StateType
 
   var state: State { get }
@@ -12,22 +12,44 @@ public protocol Store {
 }
 
 public typealias Middleware<State: StateType> = (
-  _ store: any Store,
+  _ store: any StoreProtocol,
   _ next: @escaping (State.Action) async -> Void,
   _ action: State.Action
 ) async -> Void
 
-public final class CoreStore<State: StateType>: Store {
+
+import SwiftUI
+@propertyWrapper
+public struct Store<State: StateType>: DynamicProperty {
+	@StateObject private var store: ObservableStore<CoreStore<State>>
+	
+	public var wrappedValue: ObservableStore<CoreStore<State>> { store }
+	
+	public init(
+		initialState: State,
+		reducer: @escaping (State, State.Action) -> State,
+		middleware: [Middleware<State>] = []
+	) {
+		let coreStore = CoreStore(
+			initialState: initialState,
+			reducer: reducer,
+			middleware: middleware
+		)
+		_store = StateObject(wrappedValue: ObservableStore(store: coreStore))
+	}
+}
+
+public final class CoreStore<State: StateType>: StoreProtocol {
   private let reducer: (State, State.Action) -> State
   private let middleware: [Middleware<State>]
-	public var state: State {
-		_state
-	}
+  public var state: State {
+    _state
+  }
   private(set) var _state: State
   private var stateHistory: [State] = []
   private let maxHistoryItems: Int
 
-  public init(
+  init(
     initialState: State,
     reducer: @escaping (State, State.Action) -> State,
     middleware: [Middleware<State>] = [],
@@ -39,7 +61,7 @@ public final class CoreStore<State: StateType>: Store {
     self.middleware = middleware
   }
 
-	public func dispatch(_ action: State.Action) async {
+  public func dispatch(_ action: State.Action) async {
     // Save current state before modification
     stateHistory.append(_state)
     if stateHistory.count > maxHistoryItems {
@@ -74,19 +96,19 @@ public final class CoreStore<State: StateType>: Store {
 }
 
 @MainActor
-public final class ObservableStore<S: Store>: ObservableObject {
-	public var state: S.State {
-		_state
-	}
+public final class ObservableStore<S: StoreProtocol>: ObservableObject {
+  public var state: S.State {
+    _state
+  }
   @Published private(set) var _state: S.State
   private let store: S
 
-  public init(store: S) {
+  init(store: S) {
     self.store = store
     self._state = store.state
   }
 
-	public func dispatch(_ action: S.State.Action) {
+  public func dispatch(_ action: S.State.Action) {
     Task {
       await store.dispatch(action)
       await MainActor.run { self._state = store.state }
