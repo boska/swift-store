@@ -45,7 +45,7 @@ final class StoreTests: XCTestCase {
     var middlewareCalled = false
 
     // Given
-    let testMiddleware: Middleware<TestState> = { store, next, action in
+    let testMiddleware: Middleware<TestState> = { getState, dispatch, next, action in
       middlewareCalled = true
       await next(action)
     }
@@ -76,13 +76,13 @@ final class StoreTests: XCTestCase {
   func testMultipleMiddleware() async {
     var executionOrder: [String] = []
 
-    let firstMiddleware: Middleware<TestState> = { store, next, action in
+    let firstMiddleware: Middleware<TestState> = { getState, dispatch, next, action in
       executionOrder.append("first")
       await next(action)
       executionOrder.append("first-end")
     }
 
-    let secondMiddleware: Middleware<TestState> = { store, next, action in
+    let secondMiddleware: Middleware<TestState> = { getState, dispatch, next, action in
       executionOrder.append("second")
       await next(action)
       executionOrder.append("second-end")
@@ -96,14 +96,12 @@ final class StoreTests: XCTestCase {
 
     await store.dispatch(.increment)
 
-    // Middleware executes from last to first (outside to inside)
-    // secondMiddleware wraps firstMiddleware, which wraps the reducer
     XCTAssertEqual(executionOrder, ["second", "first", "first-end", "second-end"])
   }
 
   func testActionTransformingMiddleware() async {
     // Middleware that converts increment to decrement
-    let transformMiddleware: Middleware<TestState> = { store, next, action in
+    let transformMiddleware: Middleware<TestState> = { getState, dispatch, next, action in
       switch action {
       case .increment:
         await next(.decrement)
@@ -135,7 +133,7 @@ final class StoreTests: XCTestCase {
   func testAsyncMiddleware() async {
     var asyncOperationCompleted = false
 
-    let asyncMiddleware: Middleware<TestState> = { store, next, action in
+    let asyncMiddleware: Middleware<TestState> = { getState, dispatch, next, action in
       // Simulate async operation
       try? await Task.sleep(nanoseconds: 100_000_000)  // 0.1 seconds
       asyncOperationCompleted = true
@@ -155,7 +153,7 @@ final class StoreTests: XCTestCase {
   func testFilteringMiddleware() async {
     var reducerCalled = false
 
-    let filterMiddleware: Middleware<TestState> = { store, next, action in
+    let filterMiddleware: Middleware<TestState> = { getState, dispatch, next, action in
       switch action {
       case .increment:
         // Don't call next, effectively blocking the action
@@ -184,15 +182,15 @@ final class StoreTests: XCTestCase {
   }
 
   func testStateAccessInMiddleware() async {
-    let stateCheckMiddleware: Middleware<TestState> = { store, next, action in
-      // Only allow increment if counter is less than 2
+    let stateCheckMiddleware: Middleware<TestState> = { getState, dispatch, next, action in
       if case .increment = action {
-        guard let counter = store.state as? TestState, counter.counter < 2 else { return }
+        let currentState = getState()
+        guard currentState.counter < 2 else { return }
       }
       await next(action)
     }
 
-    let store = CoreStore(
+    let store: CoreStore<StoreTests.TestState> = CoreStore(
       initialState: TestState(),
       reducer: { state, action in
         var newState = state
@@ -208,19 +206,19 @@ final class StoreTests: XCTestCase {
     )
 
     // First two increments should work
-    await store.dispatch(TestState.Action.increment)
+    await store.dispatch(.increment)
     XCTAssertEqual(store.state.counter, 1)
-    await store.dispatch(TestState.Action.increment)
+    await store.dispatch(.increment)
     XCTAssertEqual(store.state.counter, 2)
     // Third increment should be blocked
-    await store.dispatch(TestState.Action.increment)
+    await store.dispatch(.increment)
     XCTAssertEqual(store.state.counter, 2)
   }
 
   func testLoggingMiddleware() async {
     var loggedActions: [TestState.Action] = []
 
-    let loggingMiddleware: Middleware<TestState> = { store, next, action in
+    let loggingMiddleware: Middleware<TestState> = { getState, dispatch, next, action in
       loggedActions.append(action)
       await next(action)
     }
@@ -315,7 +313,7 @@ final class StoreTests: XCTestCase {
     var middlewareCalled = false
 
     // Given
-    let testMiddleware: Middleware<TestState> = { store, next, action in
+    let testMiddleware: Middleware<TestState> = { getState, dispatch, next, action in
       middlewareCalled = true
       await next(action)
     }

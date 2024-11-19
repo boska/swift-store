@@ -12,31 +12,30 @@ public protocol StoreProtocol {
 }
 
 public typealias Middleware<State: StateType> = (
-  _ store: any StoreProtocol,
+  _ getState: @escaping () -> State,
+  _ dispatch: @escaping (State.Action) async -> Void,
   _ next: @escaping (State.Action) async -> Void,
   _ action: State.Action
 ) async -> Void
 
-
-import SwiftUI
 @propertyWrapper
 public struct Store<State: StateType>: DynamicProperty {
-	@StateObject private var store: ObservableStore<CoreStore<State>>
-	
-	public var wrappedValue: ObservableStore<CoreStore<State>> { store }
-	
-	public init(
-		initialState: State,
-		reducer: @escaping (State, State.Action) -> State,
-		middleware: [Middleware<State>] = []
-	) {
-		let coreStore = CoreStore(
-			initialState: initialState,
-			reducer: reducer,
-			middleware: middleware
-		)
-		_store = StateObject(wrappedValue: ObservableStore(store: coreStore))
-	}
+  @StateObject private var store: ObservableStore<CoreStore<State>>
+
+  public var wrappedValue: ObservableStore<CoreStore<State>> { store }
+
+  public init(
+    initialState: State,
+    reducer: @escaping (State, State.Action) -> State,
+    middleware: [Middleware<State>] = []
+  ) {
+    let coreStore = CoreStore(
+      initialState: initialState,
+      reducer: reducer,
+      middleware: middleware
+    )
+    _store = StateObject(wrappedValue: ObservableStore(store: coreStore))
+  }
 }
 
 public final class CoreStore<State: StateType>: StoreProtocol {
@@ -77,7 +76,12 @@ public final class CoreStore<State: StateType>: StoreProtocol {
     ) { chain, middleware in
       return { [weak self] action in
         guard let self = self else { return }
-        await middleware(self, chain, action)
+        await middleware(
+          { self.state },
+          { await self.dispatch($0) },
+          chain,
+          action
+        )
       }
     }
 

@@ -38,14 +38,14 @@ private func todoReducer(state: TodoState, action: TodoState.Action) -> TodoStat
 
 // Example logging middleware
 func makeLoggingMiddleware() -> Middleware<TodoState> {
-  return { store, next, action in
+  return { getState, disptach, next, action in
     print("⚡️ Before action: \(action)")
-    print("📝 Current state: \(store.state)")
+    print("📝 Current state: \(getState())")
 
     await next(action)
 
     print("✅ After action: \(action)")
-    print("📝 New state: \(store.state)")
+    print("📝 New state: \(getState())")
   }
 }
 
