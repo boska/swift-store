@@ -238,6 +238,16 @@ public struct InterviewList: View {
         }
       }
       .navigationTitle("Interview Tracker")
+      .toolbar {
+        ToolbarItem(placement: .navigationBarTrailing) {
+          Button(action: {
+            store.undo()
+          }) {
+            Image(systemName: "arrow.uturn.backward.circle")
+          }
+          .disabled(!store.canUndo)
+        }
+      }
       .alert("Rejection Reason", isPresented: $showingRejectionAlert) {
         TextField("Enter reason", text: $rejectionReason)
         Button("Cancel", role: .cancel) {

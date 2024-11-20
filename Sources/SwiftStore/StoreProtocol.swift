@@ -8,7 +8,9 @@ public protocol StoreProtocol {
   associatedtype State: StateType
 
   var state: State { get }
+  var canUndo: Bool { get }
   func dispatch(_ action: State.Action) async
+  func undo() async
 }
 
 public typealias Middleware<State: StateType> = (
@@ -89,12 +91,12 @@ public final class CoreStore<State: StateType>: StoreProtocol {
     await chain(action)
   }
 
-  func undo() async {
+  public func undo() async {
     guard let previousState = stateHistory.popLast() else { return }
     _state = previousState
   }
 
-  var canUndo: Bool {
+  public var canUndo: Bool {
     !stateHistory.isEmpty
   }
 }
@@ -117,5 +119,16 @@ public final class ObservableStore<S: StoreProtocol>: ObservableObject {
       await store.dispatch(action)
       await MainActor.run { self._state = store.state }
     }
+  }
+
+  public func undo() {
+    Task {
+      await store.undo()
+      await MainActor.run { self._state = store.state }
+    }
+  }
+
+  public var canUndo: Bool {
+    store.canUndo
   }
 }
