@@ -2,7 +2,7 @@ import SwiftStore
 import SwiftUI
 
 // Define the state
-struct InterviewState: StateType {
+struct InterviewState: StateType, Codable {
   struct Interview: Identifiable, Equatable {
     let id: UUID = UUID()
     var candidateName: String
@@ -11,10 +11,8 @@ struct InterviewState: StateType {
     var date: Date?  // Optional date for the interview
 
     enum Stage: String, CaseIterable {
-      case firstInterview = "First Interview"
-      case secondInterview = "Second Interview"
-      case hrInterview = "HR Interview"
-      case offer = "Offer"
+      case interviewing = "Interviewing"
+      case offered = "Offered"
       case rejected = "Rejected"
     }
   }
@@ -30,6 +28,10 @@ struct InterviewState: StateType {
   }
 }
 
+// Add Codable conformance to Interview and Stage
+extension InterviewState.Interview: Codable {}
+extension InterviewState.Interview.Stage: Codable {}
+
 // Define the reducer
 private func interviewReducer(state: InterviewState, action: InterviewState.Action)
   -> InterviewState
@@ -39,7 +41,7 @@ private func interviewReducer(state: InterviewState, action: InterviewState.Acti
   switch action {
   case .add(let candidateName):
     newState.interviews.append(
-      InterviewState.Interview(candidateName: candidateName, stage: .firstInterview))
+      InterviewState.Interview(candidateName: candidateName, stage: .interviewing))
   case .setStage(let id, let newStage):
     if let index = newState.interviews.firstIndex(where: { $0.id == id }) {
       newState.interviews[index].stage = newStage
@@ -54,7 +56,7 @@ private func interviewReducer(state: InterviewState, action: InterviewState.Acti
     }
   case .setOffered(let id):
     if let index = newState.interviews.firstIndex(where: { $0.id == id }) {
-      newState.interviews[index].stage = .offer
+      newState.interviews[index].stage = .offered
     }
   case .updateDate(let id, let date):
     if let index = newState.interviews.firstIndex(where: { $0.id == id }) {
@@ -78,11 +80,52 @@ func makeLoggingMiddleware() -> Middleware<InterviewState> {
   }
 }
 
+// Create a storage middleware
+func makeStorageMiddleware() -> Middleware<InterviewState> {
+  let defaults = UserDefaults.standard
+  let storageKey = "interview_state"
+
+  // Load initial state if available
+  let initialState: InterviewState? = {
+    guard let data = defaults.data(forKey: storageKey),
+      let state = try? JSONDecoder().decode(InterviewState.self, from: data)
+    else {
+      return nil
+    }
+    return state
+  }()
+
+  return { getState, dispatch, next, action in
+    // First, process the action
+    await next(action)
+
+    // Then, save the updated state
+    let currentState = getState()
+    if let encoded = try? JSONEncoder().encode(currentState) {
+      defaults.set(encoded, forKey: storageKey)
+    }
+  }
+}
+
 public struct InterviewList: View {
   @Store(
-    initialState: InterviewState(),
+    initialState: {
+      // Try to load saved state, fall back to empty state
+      let defaults = UserDefaults.standard
+      let storageKey = "interview_state"
+
+      if let data = defaults.data(forKey: storageKey),
+        let state = try? JSONDecoder().decode(InterviewState.self, from: data)
+      {
+        return state
+      }
+      return InterviewState()
+    }(),
     reducer: interviewReducer,
-    middleware: [makeLoggingMiddleware()]
+    middleware: [
+      makeLoggingMiddleware(),
+      makeStorageMiddleware(),
+    ]
   ) private var store
 
   @State private var newCandidateName = ""
@@ -92,10 +135,8 @@ public struct InterviewList: View {
 
   private func stageColor(_ stage: InterviewState.Interview.Stage) -> Color {
     switch stage {
-    case .firstInterview: return .blue
-    case .secondInterview: return .purple
-    case .hrInterview: return .orange
-    case .offer: return .green
+    case .interviewing: return .blue
+    case .offered: return .green
     case .rejected: return .red
     }
   }
@@ -133,37 +174,10 @@ public struct InterviewList: View {
                   Text(interview.candidateName)
                     .font(.headline)
                 }
-
                 Spacer()
 
-                Picker(
-                  "Stage",
-                  selection: Binding(
-                    get: { interview.stage },
-                    set: { newStage in
-                      if newStage == .rejected {
-                        selectedInterviewId = interview.id
-                        showingRejectionAlert = true
-                      } else {
-                        store.dispatch(.setStage(interview.id, newStage))
-                      }
-                    }
-                  )
-                ) {
-                  ForEach(InterviewState.Interview.Stage.allCases, id: \.self) { stage in
-                    HStack {
-                      Circle()
-                        .fill(stageColor(stage))
-                        .frame(width: 6, height: 6)
-                      Text(stage.rawValue)
-                    }.tag(stage)
-                  }
-                }
-                .pickerStyle(MenuPickerStyle())
-                .frame(width: 150)
-
                 // Star button to set the stage to "Offer"
-                if interview.stage != .offer {
+                if interview.stage == .offered {
                   Button(action: {
                     store.dispatch(.setOffered(interview.id))
                   }) {
@@ -172,6 +186,31 @@ public struct InterviewList: View {
                   }
                 }
               }
+
+              Picker(
+                "Status",
+                selection: Binding(
+                  get: { interview.stage },
+                  set: { newStage in
+                    if newStage == .rejected {
+                      selectedInterviewId = interview.id
+                      showingRejectionAlert = true
+                    } else {
+                      store.dispatch(.setStage(interview.id, newStage))
+                    }
+                  }
+                )
+              ) {
+                ForEach(InterviewState.Interview.Stage.allCases, id: \.self) { stage in
+                  HStack {
+                    Circle()
+                      .fill(stageColor(stage))
+                      .frame(width: 6, height: 6)
+                    Text(stage.rawValue)
+                  }.tag(stage)
+                }
+              }
+              .pickerStyle(MenuPickerStyle())
 
               if interview.stage == .rejected {
                 Text("Reason: \(interview.rejectionReason ?? "N/A")")
@@ -182,7 +221,7 @@ public struct InterviewList: View {
               // Date Picker
               if interview.stage != .rejected {
                 DatePicker(
-                  "Interview Date",
+                  "Next interview",
                   selection: Binding(
                     get: { interview.date ?? Date() },
                     set: { newDate in
