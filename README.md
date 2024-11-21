@@ -336,7 +336,7 @@ final class TodoStoreTests: XCTestCase {
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/yourusername/SwiftStore", from: "1.0.0")
+    .package(url: "https://github.com/boska/swift-store", from: "0.0.5")
 ]
 ```
 
