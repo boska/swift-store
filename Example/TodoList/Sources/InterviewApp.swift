@@ -25,6 +25,7 @@ struct InterviewState: StateType, Codable {
     case reject(UUID, String)
     case setOffered(UUID)  // New action to set the stage to "Offer"
     case updateDate(UUID, Date)  // Action to update the date
+    case reset  // New action to clear the state
   }
 }
 
@@ -39,6 +40,8 @@ private func interviewReducer(state: InterviewState, action: InterviewState.Acti
   var newState = state
 
   switch action {
+  case .reset:
+    newState.interviews = []
   case .add(let candidateName):
     newState.interviews.append(
       InterviewState.Interview(candidateName: candidateName, stage: .interviewing))
@@ -107,6 +110,17 @@ func makeStorageMiddleware() -> Middleware<InterviewState> {
   }
 }
 
+// Add delay middleware
+func makeDelayMiddleware(duration: TimeInterval = 0.3) -> Middleware<InterviewState> {
+  return { getState, dispatch, next, action in
+    // Add delay before processing action
+    try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+
+    // Process the action
+    await next(action)
+  }
+}
+
 public struct InterviewList: View {
   @Store(
     initialState: {
@@ -123,8 +137,8 @@ public struct InterviewList: View {
     }(),
     reducer: interviewReducer,
     middleware: [
-      makeLoggingMiddleware(),
-      makeStorageMiddleware(),
+      makeStorageMiddleware()
+      // makeDelayMiddleware(duration: 0.3),
     ]
   ) private var store
 
@@ -139,6 +153,87 @@ public struct InterviewList: View {
     case .offered: return .green
     case .rejected: return .red
     }
+  }
+
+  private func loadDemoData() {
+    let companies = [
+      "Google", "Apple", "Meta", "Amazon", "Netflix",
+      "Microsoft", "Twitter", "Uber", "Airbnb", "LinkedIn",
+      "Stripe", "Square", "Coinbase", "Robinhood", "Spotify",
+      "ByteDance", "Tesla", "Slack", "Zoom", "Palantir",
+    ]
+
+    let rejectionReasons = [
+      "Team fit concerns",
+      "Technical skills gap",
+      "Experience level mismatch",
+      "Position filled internally",
+      "Hiring freeze",
+    ]
+
+    // Generate 10-20 random interviews
+    let count = Int.random(in: 10...20)
+
+    // Create demo interviews using existing actions
+    Task {
+      for _ in 0..<count {
+        let company = companies.randomElement()!
+        store.dispatch(.add(company))
+
+        // Get the ID of the just-added interview
+        if let id = store.state.interviews.first?.id {
+          // Randomly set stage with equal distribution
+          let randomValue = Double.random(in: 0...1)
+          let stage: InterviewState.Interview.Stage
+
+          switch randomValue {
+          case 0..<0.4:  // 40% interviewing
+            stage = .interviewing
+          case 0.4..<0.7:  // 30% offered
+            stage = .offered
+          default:  // 30% rejected
+            stage = .rejected
+          }
+
+          print(stage)
+
+          store.dispatch(.setStage(id, stage))
+
+          if stage == .rejected {
+            store.dispatch(.reject(id, rejectionReasons.randomElement()!))
+          } else if stage == .offered {
+            store.dispatch(.setStage(id, .offered))
+          }
+          // No need to dispatch for .interviewing as it's the default
+
+          // Add random date if not rejected
+          if stage != .rejected {
+            let randomDays = Int.random(in: 1...30)
+            let futureDate = Calendar.current.date(
+              byAdding: .day,
+              value: randomDays,
+              to: Date()
+            )!
+            await store.dispatch(.updateDate(id, futureDate))
+          }
+        }
+      }
+      print(store.state)
+
+    }
+  }
+
+  // Add computed properties to group interviews
+  private var interviewingCandidates: [InterviewState.Interview] {
+    store.state.interviews.filter { $0.stage == .interviewing }
+  }
+
+  private var offeredCandidates: [InterviewState.Interview] {
+    store.state.interviews.filter { $0.stage == .offered }
+  }
+
+  private var rejectedCandidates: [InterviewState.Interview] {
+    store.state.interviews.filter { $0.stage == .rejected }
   }
 
   public var body: some View {
@@ -162,108 +257,159 @@ public struct InterviewList: View {
 
         // Interview list
         List {
-          ForEach(store.state.interviews) { interview in
-            VStack(alignment: .leading, spacing: 12) {
-              // Row 1: Name and Stage
-              HStack {
-                HStack {
-                  Circle()
-                    .fill(stageColor(interview.stage))
-                    .frame(width: 8, height: 8)
-
-                  Text(interview.candidateName)
-                    .font(.headline)
-                }
-                Spacer()
-
-                // Star button to set the stage to "Offer"
-                if interview.stage == .offered {
-                  Button(action: {
-                    store.dispatch(.setOffered(interview.id))
-                  }) {
-                    Image(systemName: "star.fill")
-                      .foregroundColor(.yellow)
-                  }
-                }
-              }
-
-              Picker(
-                "Status",
-                selection: Binding(
-                  get: { interview.stage },
-                  set: { newStage in
-                    if newStage == .rejected {
-                      selectedInterviewId = interview.id
-                      showingRejectionAlert = true
-                    } else {
-                      store.dispatch(.setStage(interview.id, newStage))
-                    }
-                  }
-                )
-              ) {
-                ForEach(InterviewState.Interview.Stage.allCases, id: \.self) { stage in
-                  HStack {
-                    Circle()
-                      .fill(stageColor(stage))
-                      .frame(width: 6, height: 6)
-                    Text(stage.rawValue)
-                  }.tag(stage)
-                }
-              }
-              .pickerStyle(MenuPickerStyle())
-
-              if interview.stage == .rejected {
-                Text("Reason: \(interview.rejectionReason ?? "N/A")")
-                  .foregroundColor(.gray)
-                  .italic()
-              }
-
-              // Date Picker
-              if interview.stage != .rejected {
-                DatePicker(
-                  "Next interview",
-                  selection: Binding(
-                    get: { interview.date ?? Date() },
-                    set: { newDate in
-                      store.dispatch(.updateDate(interview.id, newDate))
-                    }
-                  ),
-                  displayedComponents: .date
-                )
-                .datePickerStyle(CompactDatePickerStyle())
-              }
+          // Interviewing Section
+          Section(header: Text("Interviewing (\(interviewingCandidates.count))")) {
+            ForEach(interviewingCandidates) { interview in
+              InterviewRow(interview: interview, store: store)
             }
-            .padding(.vertical, 5)
+          }
+
+          // Offered Section
+          Section(header: Text("Offered (\(offeredCandidates.count))")) {
+            ForEach(offeredCandidates) { interview in
+              InterviewRow(interview: interview, store: store)
+            }
+          }
+
+          // Rejected Section
+          Section(header: Text("Rejected (\(rejectedCandidates.count))")) {
+            ForEach(rejectedCandidates) { interview in
+              InterviewRow(interview: interview, store: store)
+            }
           }
         }
+        .listStyle(InsetGroupedListStyle())
       }
       .navigationTitle("Interview Tracker")
       .toolbar {
         ToolbarItem(placement: .navigationBarTrailing) {
+          HStack {
+            Button(action: {
+              store.dispatch(.reset)
+            }) {
+              Image(systemName: "trash")
+                .foregroundColor(.red)
+            }
+
+            Button(action: {
+              store.undo()
+            }) {
+              Image(systemName: "arrow.uturn.backward.circle")
+            }
+            .disabled(!store.canUndo)
+
+            Button(action: {
+              withAnimation {
+                loadDemoData()
+              }
+            }) {
+              Image(systemName: "wand.and.stars")
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// Extract interview row to a separate view for cleaner code
+struct InterviewRow: View {
+  let interview: InterviewState.Interview
+  let store: ObservableStore<CoreStore<InterviewState>>
+  @State private var showingRejectionAlert = false
+  @State private var rejectionReason = ""
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      // Row 1: Name and Stage
+      HStack {
+        HStack {
+          Circle()
+            .fill(stageColor(interview.stage))
+            .frame(width: 8, height: 8)
+
+          Text(interview.candidateName)
+            .font(.headline)
+        }
+
+        Spacer()
+
+        // Star button to set the stage to "Offer"
+        if interview.stage == .offered {
           Button(action: {
-            store.undo()
+            store.dispatch(.setOffered(interview.id))
           }) {
-            Image(systemName: "arrow.uturn.backward.circle")
-          }
-          .disabled(!store.canUndo)
-        }
-      }
-      .alert("Rejection Reason", isPresented: $showingRejectionAlert) {
-        TextField("Enter reason", text: $rejectionReason)
-        Button("Cancel", role: .cancel) {
-          rejectionReason = ""
-          selectedInterviewId = nil
-        }
-        Button("Confirm") {
-          if let id = selectedInterviewId {
-            store.dispatch(.reject(id, rejectionReason))
-            rejectionReason = ""
-            selectedInterviewId = nil
+            Image(systemName: "star.fill")
+              .foregroundColor(.yellow)
           }
         }
-      } message: {
-        Text("Please provide a reason for rejection")
       }
+
+      Picker(
+        "Status",
+        selection: Binding(
+          get: { interview.stage },
+          set: { newStage in
+            if newStage == .rejected {
+              showingRejectionAlert = true
+            } else {
+              store.dispatch(.setStage(interview.id, newStage))
+            }
+          }
+        )
+      ) {
+        ForEach(InterviewState.Interview.Stage.allCases, id: \.self) { stage in
+          HStack {
+            Circle()
+              .fill(stageColor(stage))
+              .frame(width: 6, height: 6)
+            Text(stage.rawValue)
+          }.tag(stage)
+        }
+      }
+      .pickerStyle(MenuPickerStyle())
+
+      if interview.stage == .rejected {
+        Text("Reason: \(interview.rejectionReason ?? "N/A")")
+          .foregroundColor(.gray)
+          .italic()
+      }
+
+      // Date Picker
+      if interview.stage != .rejected {
+        DatePicker(
+          "Next interview",
+          selection: Binding(
+            get: { interview.date ?? Date() },
+            set: { newDate in
+              store.dispatch(.updateDate(interview.id, newDate))
+            }
+          ),
+          displayedComponents: .date
+        )
+        .datePickerStyle(CompactDatePickerStyle())
+      }
+    }
+    .padding(.vertical, 5)
+    .alert("Rejection Reason", isPresented: $showingRejectionAlert) {
+      TextField("Enter reason", text: $rejectionReason)
+      Button("Cancel", role: .cancel) {
+        rejectionReason = ""
+      }
+      Button("Confirm") {
+        store.dispatch(.reject(interview.id, rejectionReason))
+        rejectionReason = ""
+      }
+    } message: {
+      Text("Please provide a reason for rejection")
+    }
+  }
+
+  private func stageColor(_ stage: InterviewState.Interview.Stage) -> Color {
+    switch stage {
+    case .interviewing: return .blue
+    case .offered: return .green
+    case .rejected: return .red
     }
   }
 }
