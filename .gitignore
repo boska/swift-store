@@ -1,5 +1,6 @@
 .DS_Store
 /.build
+/ExampleCLI/.build
 /Packages
 xcuserdata/
 DerivedData/
