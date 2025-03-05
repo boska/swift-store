@@ -23,6 +23,18 @@ enum MenuOption: String, CaseIterable {
     case exit = "Exit"
 }
 
+// Global function for terminal cleanup
+@_cdecl("cleanup_terminal")
+func cleanupTerminal() {
+    // Reset terminal to normal mode
+    var term = termios()
+    tcgetattr(STDIN_FILENO, &term)
+    term.c_lflag |= UInt32(ECHO | ICANON)
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &term)
+    print("\u{001B}[?25h") // Show cursor
+    fflush(stdout)
+}
+
 // Terminal raw mode handling
 final class TerminalConfig {
     private var originalTermios: termios
@@ -36,10 +48,15 @@ final class TerminalConfig {
         var raw = originalTermios
         raw.c_lflag &= ~UInt32(ECHO | ICANON)
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw)
+        print(TerminalControl.hideCursor, terminator: "")
+        fflush(stdout)
     }
     
     func disableRawMode() {
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &originalTermios)
+        print(TerminalControl.showCursor, terminator: "")
+        print() // Add a newline
+        fflush(stdout)
     }
     
     deinit {
@@ -48,7 +65,7 @@ final class TerminalConfig {
 }
 
 // Define the state for a simple todo list application
-struct TodoState: StateType {
+struct TodoState: StateType, Codable {
     var todos: [String] = []
     var completedTodos: [String] = []
     
@@ -112,6 +129,23 @@ func todoReducer(state: TodoState, action: TodoState.Action) -> TodoState {
     return newState
 }
 
+// File URL for persistence
+let todoStorageURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("todos.json")
+
+// Create persistence middleware
+func createPersistenceMiddleware() -> Middleware<TodoState> {
+    return { getState, dispatch, next, action in
+        // Forward the action first
+        await next(action)
+        
+        // Save state after action is processed
+        let state = getState()
+        if let data = try? JSONEncoder().encode(state) {
+            try? data.write(to: todoStorageURL)
+        }
+    }
+}
+
 // Create logging middleware
 func createLoggingMiddleware<State: StateType>() -> Middleware<State> {
     return { getState, dispatch, next, action in
@@ -121,11 +155,29 @@ func createLoggingMiddleware<State: StateType>() -> Middleware<State> {
     }
 }
 
+// Initialize terminal
+let terminal = TerminalConfig()
+terminal.enableRawMode()
+
+// Ensure we cleanup on exit
+defer {
+    terminal.disableRawMode()
+}
+
+// Load initial state from disk if available
+let initialState: TodoState
+if let data = try? Data(contentsOf: todoStorageURL),
+   let savedState = try? JSONDecoder().decode(TodoState.self, from: data) {
+    initialState = savedState
+} else {
+    initialState = TodoState()
+}
+
 // Create the store
 let store = CoreStore(
-    initialState: TodoState(),
+    initialState: initialState,
     reducer: todoReducer,
-    middleware: [createLoggingMiddleware()]
+    middleware: [createPersistenceMiddleware(), createLoggingMiddleware()]
 )
 
 // Helper function to read a single character
@@ -135,12 +187,33 @@ func readChar() -> UInt8? {
     return count == 1 ? input : nil
 }
 
-// Helper function to display menu
-func displayMenu(options: [MenuOption], selectedIndex: Int) {
+// Helper function to display menu and todos
+func displayMenu(options: [MenuOption], selectedIndex: Int, store: CoreStore<TodoState>) {
     print(TerminalControl.clear, terminator: "")
     print("🎯 Todo List Manager".blue.bold)
     print("Use arrow keys to navigate and Enter to select\n".green)
     
+    // Display current todos
+    let state = store.state
+    print("📋 Current Todos:".yellow.bold)
+    if state.todos.isEmpty {
+        print("   No todos!".dim)
+    } else {
+        for (index, todo) in state.todos.enumerated() {
+            print("   \(index). \(todo)")
+        }
+    }
+    
+    print("\n✨ Completed Todos:".yellow.bold)
+    if state.completedTodos.isEmpty {
+        print("   No completed todos!".dim)
+    } else {
+        for (index, todo) in state.completedTodos.enumerated() {
+            print("   \(index). \(todo)".green)
+        }
+    }
+    
+    print("\n💼 Menu:".blue.bold)
     for (index, option) in options.enumerated() {
         if index == selectedIndex {
             print(" ▶️  ".green + option.rawValue.white.bold)
@@ -176,8 +249,7 @@ func handleMenuSelection(_ option: MenuOption, store: CoreStore<TodoState>) asyn
         }
         
     case .listTodos:
-        await store.dispatch(.list)
-        print("\nPress Enter to continue...")
+        // No need to do anything as todos are always visible
         _ = Swift.readLine()
         
     case .exit:
@@ -195,29 +267,29 @@ var selectedIndex = 0
 var running = true
 
 mainLoop: while running {
-    displayMenu(options: options, selectedIndex: selectedIndex)
+    displayMenu(options: options, selectedIndex: selectedIndex, store: store)
     
     guard let char = readChar() else { continue }
     
     switch char {
     case 27:
         // Handle arrow keys (escape sequences)
-        _ = readChar() // Skip [
-        if let arrow = readChar() {
-            switch arrow {
-            case 65: // Up arrow
-                selectedIndex = (selectedIndex - 1 + options.count) % options.count
-            case 66: // Down arrow
-                selectedIndex = (selectedIndex + 1) % options.count
-            default:
-                break
-            }
+        guard let _ = readChar() else { continue } // Skip [
+        guard let arrow = readChar() else { continue }
+        switch arrow {
+        case 65: // Up arrow
+            selectedIndex = (selectedIndex - 1 + options.count) % options.count
+        case 66: // Down arrow
+            selectedIndex = (selectedIndex + 1) % options.count
+        default:
+            break
         }
         
-    case 13: // Enter key
+    case 10, 13: // Enter key (both \n and \r)
         let selectedOption = options[selectedIndex]
         if selectedOption == .exit {
             running = false
+            print(TerminalControl.showCursor, terminator: "")
             break mainLoop
         }
         
