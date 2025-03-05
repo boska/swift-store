@@ -14,15 +14,6 @@ enum TerminalControl {
     static let showCursor = "\u{001B}[?25h"
 }
 
-// Menu options
-enum MenuOption: String, CaseIterable {
-    case addTodo = "Add Todo"
-    case completeTodo = "Complete Todo"
-    case removeTodo = "Remove Todo"
-    case listTodos = "List Todos"
-    case exit = "Exit"
-}
-
 // Global function for terminal cleanup
 @_cdecl("cleanup_terminal")
 func cleanupTerminal() {
@@ -64,121 +55,12 @@ final class TerminalConfig {
     }
 }
 
-// Define the state for a simple todo list application
-struct TodoState: StateType, Codable {
-    var todos: [String] = []
-    var completedTodos: [String] = []
-    
-    enum Action {
-        case add(String)
-        case complete(Int)
-        case remove(Int)
-        case list
-    }
+// Demo options for the main menu
+enum DemoOption: String, CaseIterable {
+    case todoList = "TodoList"
+    case animationDemo = "Animation Demo"
+    case exit = "Exit"
 }
-
-// Create the reducer to handle state changes
-func todoReducer(state: TodoState, action: TodoState.Action) -> TodoState {
-    var newState = state
-    
-    switch action {
-    case .add(let todo):
-        newState.todos.append(todo)
-        print("✅ Added todo: \(todo)")
-        
-    case .complete(let index):
-        guard index < state.todos.count else {
-            print("❌ Invalid index")
-            return state
-        }
-        let todo = state.todos[index]
-        newState.completedTodos.append(todo)
-        newState.todos.remove(at: index)
-        print("🎉 Completed todo: \(todo)")
-        
-    case .remove(let index):
-        guard index < state.todos.count else {
-            print("❌ Invalid index")
-            return state
-        }
-        let todo = state.todos[index]
-        newState.todos.remove(at: index)
-        print("🗑️ Removed todo: \(todo)")
-        
-    case .list:
-        print("\n📝 Current Todos:")
-        if state.todos.isEmpty {
-            print("   No todos!")
-        } else {
-            for (index, todo) in state.todos.enumerated() {
-                print("   \(index). \(todo)")
-            }
-        }
-        
-        print("\n✨ Completed Todos:")
-        if state.completedTodos.isEmpty {
-            print("   No completed todos!")
-        } else {
-            for (index, todo) in state.completedTodos.enumerated() {
-                print("   \(index). \(todo)")
-            }
-        }
-        print("")
-    }
-    
-    return newState
-}
-
-// File URL for persistence
-let todoStorageURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("todos.json")
-
-// Create persistence middleware
-func createPersistenceMiddleware() -> Middleware<TodoState> {
-    return { getState, dispatch, next, action in
-        // Forward the action first
-        await next(action)
-        
-        // Save state after action is processed
-        let state = getState()
-        if let data = try? JSONEncoder().encode(state) {
-            try? data.write(to: todoStorageURL)
-        }
-    }
-}
-
-// Create logging middleware
-func createLoggingMiddleware<State: StateType>() -> Middleware<State> {
-    return { getState, dispatch, next, action in
-        print("\n🔄 Action: \(action)")
-        await next(action)
-        print("📊 New State: \(getState())\n")
-    }
-}
-
-// Initialize terminal
-let terminal = TerminalConfig()
-terminal.enableRawMode()
-
-// Ensure we cleanup on exit
-defer {
-    terminal.disableRawMode()
-}
-
-// Load initial state from disk if available
-let initialState: TodoState
-if let data = try? Data(contentsOf: todoStorageURL),
-   let savedState = try? JSONDecoder().decode(TodoState.self, from: data) {
-    initialState = savedState
-} else {
-    initialState = TodoState()
-}
-
-// Create the store
-let store = CoreStore(
-    initialState: initialState,
-    reducer: todoReducer,
-    middleware: [createPersistenceMiddleware(), createLoggingMiddleware()]
-)
 
 // Helper function to read a single character
 func readChar() -> UInt8? {
@@ -187,33 +69,13 @@ func readChar() -> UInt8? {
     return count == 1 ? input : nil
 }
 
-// Helper function to display menu and todos
-func displayMenu(options: [MenuOption], selectedIndex: Int, store: CoreStore<TodoState>) {
+// Helper function to display the main menu
+func displayMainMenu(options: [DemoOption], selectedIndex: Int) {
     print(TerminalControl.clear, terminator: "")
-    print("🎯 Todo List Manager".blue.bold)
+    print("🚀 Example CLI Demo Selector".blue.bold)
     print("Use arrow keys to navigate and Enter to select\n".green)
     
-    // Display current todos
-    let state = store.state
-    print("📋 Current Todos:".yellow.bold)
-    if state.todos.isEmpty {
-        print("   No todos!".dim)
-    } else {
-        for (index, todo) in state.todos.enumerated() {
-            print("   \(index). \(todo)")
-        }
-    }
-    
-    print("\n✨ Completed Todos:".yellow.bold)
-    if state.completedTodos.isEmpty {
-        print("   No completed todos!".dim)
-    } else {
-        for (index, todo) in state.completedTodos.enumerated() {
-            print("   \(index). \(todo)".green)
-        }
-    }
-    
-    print("\n💼 Menu:".blue.bold)
+    print("💼 Available Demos:".blue.bold)
     for (index, option) in options.enumerated() {
         if index == selectedIndex {
             print(" ▶️  ".green + option.rawValue.white.bold)
@@ -223,85 +85,77 @@ func displayMenu(options: [MenuOption], selectedIndex: Int, store: CoreStore<Tod
     }
 }
 
-// Helper function to handle menu selection
-func handleMenuSelection(_ option: MenuOption, store: CoreStore<TodoState>) async {
-    switch option {
-    case .addTodo:
-        print("\nEnter todo: ", terminator: "")
-        if let todo = Swift.readLine(), !todo.isEmpty {
-            await store.dispatch(.add(todo))
-        }
-        
-    case .completeTodo:
-        await store.dispatch(.list)
-        print("\nEnter index to complete: ", terminator: "")
-        if let input = Swift.readLine(),
-           let index = Int(input) {
-            await store.dispatch(.complete(index))
-        }
-        
-    case .removeTodo:
-        await store.dispatch(.list)
-        print("\nEnter index to remove: ", terminator: "")
-        if let input = Swift.readLine(),
-           let index = Int(input) {
-            await store.dispatch(.remove(index))
-        }
-        
-    case .listTodos:
-        // No need to do anything as todos are always visible
-        _ = Swift.readLine()
-        
-    case .exit:
-        break
-    }
-}
-
 // Main program loop
-let terminalConfig = TerminalConfig()
-terminalConfig.enableRawMode()
-print(TerminalControl.hideCursor, terminator: "")
-
-let options = MenuOption.allCases
-var selectedIndex = 0
-var running = true
-
-mainLoop: while running {
-    displayMenu(options: options, selectedIndex: selectedIndex, store: store)
+func runMainMenu() async {
+    let terminalConfig = TerminalConfig()
+    terminalConfig.enableRawMode()
     
-    guard let char = readChar() else { continue }
+    defer {
+        terminalConfig.disableRawMode()
+    }
     
-    switch char {
-    case 27:
-        // Handle arrow keys (escape sequences)
-        guard let _ = readChar() else { continue } // Skip [
-        guard let arrow = readChar() else { continue }
-        switch arrow {
-        case 65: // Up arrow
-            selectedIndex = (selectedIndex - 1 + options.count) % options.count
-        case 66: // Down arrow
-            selectedIndex = (selectedIndex + 1) % options.count
+    print(TerminalControl.hideCursor, terminator: "")
+    
+    let options = DemoOption.allCases
+    var selectedIndex = 0
+    var running = true
+    
+    mainLoop: while running {
+        displayMainMenu(options: options, selectedIndex: selectedIndex)
+        
+        guard let char = readChar() else { continue }
+        
+        switch char {
+        case 27:
+            // Handle arrow keys (escape sequences)
+            guard let _ = readChar() else { continue } // Skip [
+            guard let arrow = readChar() else { continue }
+            switch arrow {
+            case 65: // Up arrow
+                selectedIndex = (selectedIndex - 1 + options.count) % options.count
+            case 66: // Down arrow
+                selectedIndex = (selectedIndex + 1) % options.count
+            default:
+                break
+            }
+            
+        case 10, 13: // Enter key (both \n and \r)
+            let selectedOption = options[selectedIndex]
+            
+            switch selectedOption {
+            case .todoList:
+                // Temporarily restore normal terminal mode for the TodoDemo
+                terminalConfig.disableRawMode()
+                
+                // Run the TodoDemo
+                let todoDemo = TodoDemo()
+                await todoDemo.run()
+                
+                // Restore raw mode for main menu
+                terminalConfig.enableRawMode()
+                
+            case .animationDemo:
+                // Temporarily restore normal terminal mode for the AnimationDemo
+                terminalConfig.disableRawMode()
+                
+                // Run the AnimationDemo
+                let animationDemo = AnimationDemo()
+                animationDemo.run()
+                
+                // Restore raw mode for main menu
+                terminalConfig.enableRawMode()
+                
+            case .exit:
+                running = false
+                print(TerminalControl.showCursor, terminator: "")
+                break mainLoop
+            }
+            
         default:
             break
         }
-        
-    case 10, 13: // Enter key (both \n and \r)
-        let selectedOption = options[selectedIndex]
-        if selectedOption == .exit {
-            running = false
-            print(TerminalControl.showCursor, terminator: "")
-            break mainLoop
-        }
-        
-        // Temporarily restore normal terminal mode for input
-        print(TerminalControl.showCursor, terminator: "")
-        terminalConfig.disableRawMode()
-        await handleMenuSelection(selectedOption, store: store)
-        terminalConfig.enableRawMode()
-        print(TerminalControl.hideCursor, terminator: "")
-        
-    default:
-        break
     }
-
 }
+
+// Start the main menu
+await runMainMenu()
