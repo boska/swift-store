@@ -16,7 +16,7 @@ A lightweight, type-safe state management library for Swift with elegant SwiftUI
 - 🧪 **Testable**: Designed for easy testing
 - 🎨 **SwiftUI First**: Seamless SwiftUI integration
 
-## Basic Usage
+## Basic Usage  
 
 ### Define Your State
 
