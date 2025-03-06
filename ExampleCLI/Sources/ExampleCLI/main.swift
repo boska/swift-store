@@ -59,6 +59,7 @@ final class TerminalConfig {
 enum DemoOption: String, CaseIterable {
     case todoList = "TodoList"
     case animationDemo = "Animation Demo"
+    case snakeGame = "Snake Game"
     case exit = "Exit"
 }
 
@@ -141,6 +142,17 @@ func runMainMenu() async {
                 // Run the AnimationDemo
                 let animationDemo = AnimationDemo()
                 animationDemo.run()
+                
+                // Restore raw mode for main menu
+                terminalConfig.enableRawMode()
+                
+            case .snakeGame:
+                // Temporarily restore normal terminal mode for the SnakeDemo
+                terminalConfig.disableRawMode()
+                
+                // Run the SnakeDemo
+                let snakeDemo = SnakeDemo()
+                snakeDemo.run()
                 
                 // Restore raw mode for main menu
                 terminalConfig.enableRawMode()
