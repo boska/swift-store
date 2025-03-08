@@ -1,5 +1,3 @@
-import SwiftUI
-
 public protocol StateType: Equatable {
   associatedtype Action
 }
@@ -20,26 +18,6 @@ public typealias Middleware<State: StateType> = (
   _ action: State.Action
 ) async -> Void
 
-@propertyWrapper
-public struct Store<State: StateType>: DynamicProperty {
-  @StateObject private var store: ObservableStore<CoreStore<State>>
-
-  public var wrappedValue: ObservableStore<CoreStore<State>> { store }
-
-  public init(
-    initialState: State,
-    reducer: @escaping (State, State.Action) -> State,
-    middleware: [Middleware<State>] = []
-  ) {
-    let coreStore = CoreStore(
-      initialState: initialState,
-      reducer: reducer,
-      middleware: middleware
-    )
-    _store = StateObject(wrappedValue: ObservableStore(store: coreStore))
-  }
-}
-
 public final class CoreStore<State: StateType>: StoreProtocol {
   private let reducer: (State, State.Action) -> State
   private let middleware: [Middleware<State>]
@@ -50,7 +28,7 @@ public final class CoreStore<State: StateType>: StoreProtocol {
   private var stateHistory: [State] = []
   private let maxHistoryItems: Int
 
-  init(
+  public init(
     initialState: State,
     reducer: @escaping (State, State.Action) -> State,
     middleware: [Middleware<State>] = [],
@@ -98,37 +76,5 @@ public final class CoreStore<State: StateType>: StoreProtocol {
 
   public var canUndo: Bool {
     !stateHistory.isEmpty
-  }
-}
-
-@MainActor
-public final class ObservableStore<S: StoreProtocol>: ObservableObject {
-  public var state: S.State {
-    _state
-  }
-  @Published private(set) var _state: S.State
-  private let store: S
-
-  init(store: S) {
-    self.store = store
-    self._state = store.state
-  }
-
-  public func dispatch(_ action: S.State.Action) {
-    Task {
-      await store.dispatch(action)
-      await MainActor.run { self._state = store.state }
-    }
-  }
-
-  public func undo() {
-    Task {
-      await store.undo()
-      await MainActor.run { self._state = store.state }
-    }
-  }
-
-  public var canUndo: Bool {
-    store.canUndo
   }
 }
