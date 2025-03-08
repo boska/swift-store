@@ -2,19 +2,16 @@
 
 # SwiftStore
 
-A lightweight, type-safe state management library for Swift with elegant SwiftUI integration through property wrappers.
+A lightweight, type-safe state management library for Swift.
 
 [![Swift](https://img.shields.io/badge/Swift-5.5+-orange.svg)](https://swift.org)
-[![SwiftUI](https://img.shields.io/badge/SwiftUI-3.0+-blue.svg)](https://developer.apple.com/xcode/swiftui)
 [![License](https://img.shields.io/badge/license-MIT-black.svg)](https://github.com/yourusername/SwiftStore/blob/main/LICENSE)
 
 ## Features
-- 🎯 **Property Wrapper Integration**: Clean SwiftUI integration with `@Store`
-- 🔄 **Middleware Support**: Composable middleware for side effects and logging
-- 📦 **Lightweight**: No external dependencies
-- ⚡️ **Swift Concurrency**: Built with async/await
-- 🧪 **Testable**: Designed for easy testing
-- 🎨 **SwiftUI First**: Seamless SwiftUI integration
+- **Middleware Support**: Composable middleware for side effects and logging
+- **Lightweight**: No external dependencies
+- **Swift Concurrency**: Built with async/await
+- **Testable**: Designed for easy testing
 
 ## Basic Usage  
 
@@ -46,31 +43,6 @@ func counterReducer(state: CounterState, action: CounterState.Action) -> Counter
 }
 ```
 
-### Use in SwiftUI
-
-```swift
-struct ContentView: View {
-    @Store(
-        initialState: CounterState(),
-        reducer: counterReducer
-    ) private var store
-    
-    var body: some View {
-        VStack {
-            Text("Count: \(store.state.count)")
-            
-            Button("Increment") {
-                store.dispatch(.increment)
-            }
-            
-            Button("Decrement") {
-                store.dispatch(.decrement)
-            }
-        }
-    }
-}
-```
-
 ## Middleware
 
 Create and compose middleware for logging, analytics, or other side effects:
@@ -86,21 +58,21 @@ Create and compose middleware for logging, analytics, or other side effects:
 /// Example output:
 /// ```
 /// ⚡️ Before action: setTheme(dark)
-/// 📝 Current state: AppSettings(theme: system, ...)
-/// ✅ After action: setTheme(dark)
-/// 📝 New state: AppSettings(theme: dark, ...)
+/// Current state: AppSettings(theme: system, ...)
+/// After action: setTheme(dark)
+/// New state: AppSettings(theme: dark, ...)
 /// ```
 ///
 /// - Returns: A middleware function that logs state changes and actions
 func makeLoggingMiddleware<State: StateType>() -> Middleware<State> {
     return { store, next, action in
         print("⚡️ Before action: \(action)")
-        print("📝 Current state: \(store.state)")
+        print("Current state: \(store.state)")
         
         await next(action)
         
-        print("✅ After action: \(action)")
-        print("📝 New state: \(store.state)")
+        print("After action: \(action)")
+        print("New state: \(store.state)")
     }
 }
 
@@ -114,23 +86,6 @@ func makeAnalyticsMiddleware<State: StateType>() -> Middleware<State> {
         await next(action)
     }
 }
-
-// Use middleware in your view
-struct ContentView: View {
-    @Store(
-        initialState: CounterState(),
-        reducer: counterReducer,
-        middleware: [
-            makeLoggingMiddleware(),
-            makeAnalyticsMiddleware()
-        ]
-    ) private var store
-    
-    var body: some View {
-        // ... view implementation ...
-    }
-}
-```
 
 ## Complex Example: App Settings
 
@@ -191,100 +146,6 @@ func makePersistenceMiddleware<State: StateType>() -> Middleware<State> {
     }
 }
 
-struct SettingsView: View {
-    @Store(
-        initialState: AppSettings(),
-        reducer: settingsReducer,
-        middleware: [
-            makeLoggingMiddleware(),
-            makePersistenceMiddleware()
-        ]
-    ) private var store
-    
-    var body: some View {
-        Form {
-            Section("Theme") {
-                Picker("Theme", selection: Binding(
-                    get: { store.state.theme },
-                    set: { store.dispatch(.setTheme($0)) }
-                )) {
-                    ForEach(AppSettings.Theme.allCases, id: \.self) { theme in
-                        Text(theme.rawValue.capitalized)
-                            .tag(theme)
-                    }
-                }
-            }
-            
-            Section("Language & Region") {
-                Picker("Language", selection: Binding(
-                    get: { store.state.locale.language },
-                    set: { newValue in
-                        var newLocale = store.state.locale
-                        newLocale.language = newValue
-                        store.dispatch(.setLocale(newLocale))
-                    }
-                )) {
-                    Text("English").tag("en")
-                    Text("Spanish").tag("es")
-                    Text("French").tag("fr")
-                }
-                
-                Picker("Region", selection: Binding(
-                    get: { store.state.locale.region },
-                    set: { newValue in
-                        var newLocale = store.state.locale
-                        newLocale.region = newValue
-                        store.dispatch(.setLocale(newLocale))
-                    }
-                )) {
-                    Text("United States").tag("US")
-                    Text("United Kingdom").tag("GB")
-                    Text("Canada").tag("CA")
-                }
-            }
-            
-            Section {
-                Button("Reset to Defaults") {
-                    store.dispatch(.resetToDefaults)
-                }
-            }
-        }
-        .onChange(of: store.state.theme) { newTheme in
-            updateSystemTheme(to: newTheme)
-        }
-        .onChange(of: store.state.locale) { newLocale in
-            updateSystemLocale(to: newLocale)
-        }
-    }
-    
-    private func updateSystemTheme(to theme: AppSettings.Theme) {
-        // Update app theme
-        switch theme {
-        case .system:
-            window?.overrideUserInterfaceStyle = .unspecified
-        case .light:
-            window?.overrideUserInterfaceStyle = .light
-        case .dark:
-            window?.overrideUserInterfaceStyle = .dark
-        }
-    }
-    
-    private func updateSystemLocale(to locale: AppSettings.Locale) {
-        // Update app locale
-        Bundle.setLanguage(locale.language)
-        // Additional locale setup...
-    }
-}
-```
-
-This example demonstrates:
-- Complex state management with multiple related settings
-- Middleware for persistence
-- SwiftUI bindings with store dispatch
-- Side effects handling with `onChange` modifiers
-- Reset functionality
-- Type-safe enums for settings
-
 ## Testing
 
 Testing is straightforward with the store:
@@ -293,10 +154,10 @@ Testing is straightforward with the store:
 final class TodoStoreTests: XCTestCase {
     func testAddTodo() async {
         // Given
-        @Store(
+        let store = CoreStore(
             initialState: TodoState(),
             reducer: todoReducer
-        ) var store
+        )
         
         // When
         await store.dispatch(.add("Test Todo"))
@@ -308,12 +169,12 @@ final class TodoStoreTests: XCTestCase {
     
     func testToggleTodo() async {
         // Given
-        @Store(
+        let store = CoreStore(
             initialState: TodoState(todos: [
                 .init(text: "Test Todo")
             ]),
             reducer: todoReducer
-        ) var store
+        )
         
         // When
         await store.dispatch(.toggle(store.state.todos[0].id))
@@ -322,11 +183,9 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertTrue(store.state.todos[0].isCompleted)
     }
 }
-```
 
 ## Requirements
 
-- iOS 14.0+ / macOS 11.0+
 - Swift 5.5+
 - Xcode 13.0+
 
